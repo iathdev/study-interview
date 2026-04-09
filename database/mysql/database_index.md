@@ -37,7 +37,7 @@
 
 | Phân loại           | Mô tả                               | Ghi chú                           |
 | ------------------- | ----------------------------------- | --------------------------------- |
-| B-tree/B+ tree      | Cấu trúc dạng cây nhị phân tìm kiếm | Dùng phổ biến nhất                |
+| B-tree/B+ tree      | Cấu trúc dạng cây nhị phân tìm kiếm, cây tự cân bằng | Dùng phổ biến nhất                |
 | Hash                | Sử dụng hàm băm để tra cứu nhanh    | Chỉ dùng cho `=`                  |
 | Clustered Index     | Chỉ có 1, trùng với primary key     | Xác định vị trí dữ liệu trên disk |
 | Non-clustered Index | Thứ cấp, có thể nhiều cái           | Trỏ về primary key                |

@@ -81,7 +81,7 @@ DB:
 + Chậm hơn cache
 + Độ tin cậy cao hơn
 
-## 5. Cache stampede
+## 5. Cache stampede - quá tải DB
 Là vấn đề nhiều thread (user - BE) truy cập cùng lúc vào thời điểm cache miss dẫn đến
 quá tải DB
 

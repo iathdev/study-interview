@@ -1,18 +1,25 @@
-2.0 Các khái niệm cơ bản 2
+# Các khái niệm cơ bản 2
 
-2.1 Broker và Cluster
+**Apache Kafka**:
+  - **Loại**: Nền tảng streaming phân tán (distributed streaming platform).
+  - **Mô hình**: Hoạt động theo mô hình **pull**, nơi consumer chủ động yêu cầu tin nhắn từ broker.
+  - **Cấu trúc**: Sử dụng **topics** chia thành các **partitions**, lưu trữ tin nhắn dưới dạng log bất biến (append-only log). Consumer đọc dữ liệu từ offset cụ thể trong topic.
+  - **Giao thức**: Sử dụng giao thức TCP/IP tùy chỉnh, tối ưu cho hiệu suất cao nhưng ít tương thích hơn so với RabbitMQ.
+  - **Lưu trữ tin nhắn**: Tin nhắn được lưu trữ lâu dài (cho đến khi đạt giới hạn thời gian hoặc kích thước), hỗ trợ replay (đọc lại) tin nhắn.
+
+## 2.1 Broker và Cluster
 Broker: đóng vai trò là máy chủ trung gian có trách nhiệm
 nhận, lưu trữ, điều phối message giữa producers và consumers
 
 Hiểu đơn giản:
-Producer (người gửi): gửi thư (message) tới bưu điện (Kafka Broker).
-Kafka Broker: nhận thư, lưu vào hòm thư (topic + partition).
-Consumer (người nhận): tới bưu điện lấy thư theo nhu cầu (đọc message từ topic).
+- Producer (người gửi): gửi thư (message) tới bưu điện (Kafka Broker).
+- Kafka Broker: nhận thư, lưu vào hòm thư (topic + partition).
+- Consumer (người nhận): tới bưu điện lấy thư theo nhu cầu (đọc message từ topic).
 
 - Mỗi broker lưu dữ liệu của nhiều partition
 - 1 topic có nhiều partition và có thể mỗi partition này được lưu ở nhiều broker khác nhau
 
-2.2 Topic replication
+## 2.2 Topic replication
 Topic Replication trong Apache Kafka là một cơ chế đảm bảo tính sẵn sàng (high availability) và khả năng chống mất dữ liệu bằng cách nhân bản (replicate) các Partition của một Topic sang nhiều Kafka Brokers.
 
 Mục đích:
@@ -21,15 +28,15 @@ Mục đích:
 - Cải thiện tính ổn định và độ tin cậy của hệ thống Kafka
 
 Mỗi Partition có:
-1 Leader replica (được ghi & đọc chính)
-N-1 Follower replicas (chỉ đồng bộ dữ liệu từ leader)
-Kafka sẽ tự động phân phối leader/follower để cân bằng tải giữa các broker
+- 1 Leader replica (được ghi & đọc chính)
+- N = Replication factor ≤ số lượng brokers
+- N-1 Follower replicas (chỉ đồng bộ dữ liệu từ leader)
+- Kafka sẽ tự động phân phối leader/follower để cân bằng tải giữa các broker
 
-Ví dụ:
-Giả sử bạn có một Topic orders với:
-3 Partitions
-Replication factor = 3
-Kafka cluster có 3 brokers
+Ví dụ: Giả sử bạn có một Topic orders với:
+- 3 Partitions
+- Replication factor = 3
+- Kafka cluster có 3 brokers
 
 | Partition | Leader (ghi/đọc) | Follower Replicas  |
 | --------- | ---------------- | ------------------ |
@@ -44,7 +51,7 @@ Các thuật ngữ:
 | **Unclean Leader Election** | Nếu tất cả replicas mất kết nối, cho phép chọn leader từ các replica chưa đồng bộ hoàn toàn. **Cảnh báo: Có thể gây mất dữ liệu** |
 | **min.insync.replicas**     | Số replica tối thiểu cần đồng bộ để producer tiếp tục ghi dữ liệu                                                                 |
 
-Ưu - Nhược điểm của Replication
+### Ưu - Nhược điểm của Replication
 Ưu điểm:
 - Tăng độ tin cậy
 - Hỗ trợ tự động failover
@@ -59,9 +66,9 @@ Leader:
 - Mỗi 1 partition trong topic thì chỉ có 1 leader
 
 ISR broker (In-Sync Replicas)
-- Là các partiton đồng bộ dữ liệu từ leader 
+- Là các partiton đồng bộ dữ liệu tốt từ leader 
 
-2.3 Producer ACK
+## 2.3 Producer ACK
 
 - Trong hệ thống xử lý message bất đồng bộ, khi một consumer (người nhận) xử lý xong một message, nó phải gửi ACK để báo với hệ thống (hoặc broker) rằng:
 ```

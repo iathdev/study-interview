@@ -37,7 +37,7 @@ Tổ chức mối quan hệ giữa các class và object.
 | **Visitor**                 | Tách hành vi ra khỏi đối tượng cần xử lý       | Tính thuế trên các loại sản phẩm       |
 | **Iterator**                | Duyệt qua phần tử mà không lộ cấu trúc nội tại | Vòng lặp trong `List`, `Map`           |
 
-
+```pgsql
 Design Patterns
 ├── Creational
 │   ├── Singleton
@@ -58,4 +58,4 @@ Design Patterns
     ├── Template
     ├── Chain of Responsibility
     └── Mediator / Visitor / Iterator
-
+```

@@ -104,6 +104,7 @@ chính
 + Đảm bảo các nguyên tắc thiết kế CSDL:
 - Chuẩn hoá dữ liệu
 - Chia nhỏ bảng theo từng chức năng
+- Replication
 
 VD: 
 Polymorphic relationship (nhiều loại liên kết về 1 bảng)

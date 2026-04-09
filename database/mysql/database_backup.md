@@ -60,9 +60,11 @@ Sao lưu trong khi hệ thống vẫn đang hoạt động.
 - **Cách hoạt động**:
   - Bật `binlog` trong `my.cnf`.
   - Sao lưu định kỳ các file binlog.
+  - Lưu tất cả các câu lệnh thay đổi dữ liệu
 - **Ưu điểm**:
   - Hỗ trợ phục hồi dữ liệu đến thời điểm cụ thể (Point-in-time Recovery).
   - Giảm rủi ro mất dữ liệu.
+  - Hỗ trợ cả replication
 - **Nhược điểm**:
   - Tốn dung lượng nếu không quản lý log đúng cách.
 
@@ -76,6 +78,15 @@ Sao lưu trong khi hệ thống vẫn đang hoạt động.
 - **Nhược điểm**:
   - Không phải backup thật sự (xóa nhầm trên master → mất trên slave).
   - Cần cấu hình và giám sát kỹ lưỡng.
+
+| Tình huống                                 | Đọc từ đâu?                    |
+| ------------------------------------------ | ------------------------------ |
+| Sau khi ghi (INSERT, UPDATE...)            | Master                         |
+| Truy vấn quan trọng, cần dữ liệu chính xác | Master                         |
+| Dashboard, tìm kiếm, dữ liệu cache được    | Slave                          |
+| Truy vấn trong transaction                 | Master                         |
+| Muốn giảm tải cho master                   | Slave (chỉ với SELECT an toàn) |
+
 
 ## 5. Snapshot Volume
 
