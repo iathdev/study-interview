@@ -85,36 +85,154 @@ DB:
 Là vấn đề nhiều thread (user - BE) truy cập cùng lúc vào thời điểm cache miss dẫn đến
 quá tải DB
 
+**Kịch bản điển hình:**
+```
+T=0: Cache key "product:123" expire
+T=0: 1000 request cùng lúc đến, tất cả cache miss
+T=0: 1000 request cùng lúc query DB
+T=0: DB bị overload => chậm hoặc crash
+```
+
 Thường xảy ra khi:
-+ Mới khởi tạo hoặc restart cache
-+ Khi truy cập dữ liệu mới
++ Mới khởi tạo hoặc restart cache (cold start)
++ Khi TTL của một key hot (được truy cập nhiều) hết hạn đồng loạt
++ Khi truy cập dữ liệu mới chưa có trong cache
+
+**Tại sao nguy hiểm:**
+- Key càng hot (traffic càng lớn) thì stampede càng mạnh
+- DB nhận N request thay vì 1, dễ dẫn đến cascade failure (DB chết => service chết)
+- Thời gian xử lý càng lâu (query phức tạp) thì window stampede càng rộng, càng nhiều
+request dồn vào
 
 Giải quyết:
-+ Giải quyết vấn đề cache miss ít nhất có thể: Exeternal computation hoặc Probalilistic
++ Giải quyết vấn đề cache miss ít nhất có thể: External computation hoặc Probabilistic
 early expiration
-+ Dùng lock hoặc promise
++ Dùng lock hoặc promise để đảm bảo chỉ 1 request query DB, còn lại chờ
 
-### 5.1 Exeternal computation
+### 5.1 External computation
 Tạo worker hay trigger theo event expired từ cache để chủ động cập nhật lại cache khi
 hết hạn hoặc gần hết hạn
-Nhưng cache sẽ chứa nhiều dữ liệu rác
 
-### 5.2 Probalilistic early expiration
+```
+Flow:
+Cache worker giám sát TTL
+=> Trước khi key expire: worker tự query DB và set lại cache
+=> Request của user luôn hit cache, không bao giờ gặp cache miss
+```
+
+Ưu điểm:
+- Loại bỏ hoàn toàn cache miss với key hot
+- User không bao giờ phải chờ do cache miss
+
+Nhược điểm:
+- Cache sẽ chứa nhiều dữ liệu rác (key không còn được dùng nữa vẫn bị refresh)
+- Tốn resource để chạy worker liên tục
+- Phức tạp hơn trong triển khai
+
+### 5.2 Probabilistic early expiration (XFetch algorithm)
+```
 currentTime - ( timeToCompute * beta * log(rand()) ) > expiry
-Kết hợp việc đọc dữ liệu và sử dụng công thức trên để tính toàn thời điểm restart cache
-Có thể nói là dựa trên xác xuất để biết thời điểm restart cache
+```
 
-### 5.3 Lock
-Lock lại key cần lấy dữ liệu
-Khi có cache miss thì lấy dữ liệu từ DB và đồng thời update vào cache => release lock
-Sau khi release lock sẽ xử lý những request có cùng key
+Giải thích công thức:
+- `timeToCompute`: thời gian cần để query DB và set lại cache (đo trước)
+- `beta`: hệ số điều chỉnh mức độ tích cực refresh sớm (thường = 1)
+- `log(rand())`: giá trị âm ngẫu nhiên, tạo ra tính xác suất
+- Kết quả: mỗi request tự tính xác suất để quyết định có nên refresh cache sớm không
 
-### 5.4 Promise
-Thay vì bắt request phải xếp hàng đợi như Lock thì
-Gắn các request vào callback của promise
-Khi một promise chạy xong thì tất cả các promise đều có kết quả
-==> Rất phù hợp với nodejs
-PHP thì :))
+```
+Flow:
+Request đọc cache => còn TTL nhưng chạy công thức tính xác suất
+=> Nếu công thức trả về true: request này tự refresh cache (recompute sớm)
+=> Key càng gần expire thì xác suất refresh càng cao
+=> Stampede được trải đều ra thay vì dồn vào 1 thời điểm
+```
+
+**Liên quan đến quá tải DB:**
+Thay vì 1000 request đồng loạt miss cache rồi cùng query DB, XFetch khiến một vài
+request tự nguyện refresh trước khi expire. Mỗi lần refresh thành công là set lại TTL
+=> key tiếp tục sống, không bao giờ có thời điểm expire thật sự.
+DB chỉ nhận lác đác vài query rải đều, thay vì stampede tập trung.
+
+Ưu điểm:
+- Không cần worker riêng, logic nằm trong application
+- Không cần lock hay coordination giữa các request
+- Phân tán việc refresh tự nhiên nhờ tính xác suất
+
+Nhược điểm:
+- Vẫn có thể nhiều request refresh cùng lúc (giảm xác suất, không loại bỏ hoàn toàn)
+- Cần đo `timeToCompute` chính xác để công thức hoạt động đúng
+
+### 5.3 Lock (Mutex/Distributed Lock)
+Lock lại key cần lấy dữ liệu, đảm bảo chỉ 1 request được phép query DB
+
+```
+Flow:
+Cache miss => Request 1 acquire lock thành công
+=> Request 1 query DB, set cache, release lock
+=> Request 2,3,...N thấy đang lock => chờ (wait/retry)
+=> Sau khi Request 1 release lock: Request 2 check cache => hit => trả kết quả
+=> Các request sau không cần query DB nữa
+```
+
+Ưu điểm:
+- Đảm bảo chỉ 1 request query DB tại một thời điểm
+- Đơn giản để hiểu
+
+Nhược điểm:
+- Request phải xếp hàng chờ => tăng latency
+- Nếu request giữ lock bị crash => deadlock (cần set timeout cho lock)
+- Trong distributed system cần dùng distributed lock (Redis SET NX + TTL)
+
+Ví dụ với Redis:
+```
+SET lock:product:123 "1" NX EX 5   # Lock với TTL 5s để tránh deadlock
+```
+
+### 5.4 Promise / In-flight deduplication
+Thay vì bắt request phải xếp hàng đợi như Lock thì gắn các request vào callback của
+cùng 1 promise đang chạy
+
+```
+Flow:
+Cache miss => Request 1 tạo Promise, bắt đầu query DB
+=> Request 2,3,...N đến: phát hiện đã có Promise đang chạy
+=> Request 2,3,...N subscribe vào Promise đó (không tạo query mới)
+=> Promise hoàn thành: tất cả request nhận được kết quả cùng lúc
+```
+
+```javascript
+// Ví dụ pattern trong Node.js
+const inFlight = new Map();
+
+async function getWithDedup(key) {
+  const cached = await cache.get(key);
+  if (cached) return cached;
+
+  if (inFlight.has(key)) {
+    return inFlight.get(key); // subscribe vào promise đang chạy
+  }
+
+  const promise = db.query(key).then(data => {
+    cache.set(key, data);
+    inFlight.delete(key);
+    return data;
+  });
+
+  inFlight.set(key, promise);
+  return promise;
+}
+```
+
+Ưu điểm:
+- Không có request nào phải xếp hàng, tất cả nhận kết quả cùng lúc khi DB trả về
+- Hiệu quả hơn Lock về latency
+- Rất phù hợp với Node.js (single-threaded, event loop)
+
+Nhược điểm:
+- Chỉ hiệu quả trong phạm vi 1 process/instance. Nếu có nhiều BE instance thì mỗi
+instance vẫn query DB 1 lần => cần kết hợp với distributed lock
+- PHP không có shared memory giữa các request => không áp dụng được pattern này
 
 ## 6. Data inconsistency
 Write-around:

@@ -1,114 +1,124 @@
-# N-layer:
-Chia thành nhiều layer
-Thông thường sẽ gồm 4 layer:
-+ User Interface: tương tác với người dùng
-+ Business layer: Xử lý logic của hệ thông
-+ Repository layer: Nhiệm vụ tương tác với tầng data access
-+ Database layer: tầng dữ liệu: database,..
+# Kiến trúc phần mềm — Tổng quan
 
-——————————————————————————————
+Kiến trúc phần mềm là cách tổ chức code và các thành phần hệ thống để đáp ứng yêu cầu kỹ thuật và nghiệp vụ. Mục tiêu chung: **tách biệt trách nhiệm**, dễ test, dễ thay đổi, dễ mở rộng.
 
-# Hexagonal architecture:
-Port -Adapter
-Kiến trúc hình lục giác:
-Bên trong là application core
-Bên ngoài là những gì mà ứng dụng tương tác: UI, user, DB,...
-Bên trong & bên ngoài tương tác với nhau thông qua adapter
-Các thành phần bên ngoài phụ thuộc vào bên trong nhưng không ngược lại
-Dễ dàng thay đổi công nghệ sử dụng
+---
 
-Port: Interface
-Adapter: Implement của interface, có thể dễ dàng thay đổi
+## Các kiến trúc nội bộ (Internal Architecture)
 
-Một port có nhiều adapter implement
-Sử dụng DI để giao tiếp giữa port & adapter
-Ví dụ:
-Port: service
-Adapter: laravel
-=> Có thể thay đổi adapter sang ngôn ngữ khác
+Quyết định cách tổ chức code **bên trong** một service/application.
 
-——————————————————————————————
+### So sánh nhanh
 
-# Clean architecture:
-Là kiểu kiến trúc layer
-Triết lý:
-- Cô lập business logic: entities + use case
-- Tương tự hexagonal: cô lập business logic và giao tiếp với bên ngoài thông qua port & adapter
-- Sử dụng Dependency inversion: High level & low level ko phụ thuộc lẫn nhau, Chúng phụ
-thuộc vào interface
-- Chiều phụ thuộc đi từ trong ra ngoài. Bên ngoài phụ thuộc vào bên trong & không ngược lại
-- Kiến trúc gồm 4 layer đi từ trong ra ngoài:
+| Tiêu chí                   | N-Layer        | Hexagonal        | Onion            | Clean Architecture |
+|---------------------------|----------------|------------------|------------------|--------------------|
+| Phụ thuộc chiều            | Trên → dưới    | Ngoài → trong    | Ngoài → trong    | Ngoài → trong      |
+| Domain là trung tâm?       | Không hẳn      | Có               | Có               | Có                 |
+| Tách UseCase rõ ràng?      | Không          | Không            | Ít               | Có                 |
+| Test domain độc lập?       | Khó            | Dễ               | Dễ               | Dễ                 |
+| Phù hợp với                | CRUD đơn giản  | Dự án trung bình | Domain phức tạp  | DDD, hệ thống lớn  |
+| Độ phức tạp setup          | Thấp           | Trung bình       | Trung bình       | Cao                |
 
-1. Entities: là khái niệm miêu tả business logic chính và là tâng quan trọng nhất, trong OOP nó
-chính là object
-2. Use case: các rule liên quan trực tiếp đến ứng dụng. Chứa logic liên quan đến từng use case
-VD: Use Case đăng ký tài khoản (tạo mới một Person/Account) sẽ cần tổ hợp một hoặc nhiều
-Entities tuỳ vào độ phức tạp của Use Case.
-3. Interface Adapter: tập hợp các adapter tương tác với các công nghệ, chuyển đối dữ liệu để
-phù hợp với từng use case
-
-4. Framework & Driver: DB, UI, ...
-Ưu điểm:
-+ Chia để trị, tầng nào làm nhiệm vụ của tầng đấy
-+ Dễ maintance, scale
-+ Dễ unit test
-Nhược:
-+ Kông kềnh phức tạp
-+ Tính trừu tượng cao
-
-——————————————————————————————
-
-# Domains:
-+ Use case: là một phần business logic, biểu diễn một nhiệm vụ duy nhất mà hệ thống cần thực
-hiện
-==> Các use case cần độc lập và tách biệt với nhau hoàn toàn. Giống Single Responsibility
-trong SOLID
-Tại sao cần thiết kế ứng dụng xoay quanh use case:
-- Đảm bảo code có thể tái sử dụng
-- Đảm bảo nguyên tắc Single Responsibility trong SOLID
-- Dễ dàng nắm bắt business hơn là phải tập trung vào Controller hay Model
-- Dễ dàng kiểm thử
-
-+ Action:
-
-Ví dụ:
-Thay vì có một OrderService bao gồm: index, create, edit, ...
-Thì chi thành các use case (Action)
-- Use case (action): tạo order
-- Sẽ có các action nhỏ hơn:
-+ Kiểm tra thời gian hợp lệ (ở cart & order)
-+ Kiểm tra tồn kho (ở cart & order)
-+ Kiểm tra các logic khác
-+ Tính toán giá
-+ Lưu trữ đơn hàng và các thông tin liên quan vào DB
-- Mỗi action - repository sẽ giao tiếp thông qua repository & các biến truyền vào là DTO (Data)
-khi cần một object
-- Gồm các entities:
-+ item: đại diện cho thông tin sản phẩm
-+ order: đại diện cho một đơn hàng
-+ order_product: lưu order mua những item nào
-Các action được khỏi tạo thông qua phương thức app() của Laravel: là một helper function: trả
-về instance của app container
-Giúp truy cập vào các dependencies mà container quản lý
+### Quan hệ giữa các kiến trúc
 
 ```
-trait AsAction
-{
-/**
-
-* @return static
-*/
-public static function make(): static
-{
-return app(static::class);
-}
-}
+N-Layer (đơn giản nhất)
+    │
+    └──▶ Hexagonal / Onion (cô lập domain, dùng port-adapter)
+              │
+              └──▶ Clean Architecture (phân tách rõ UseCase + Entity)
+                        │
+                        └──▶ DDD (tactical patterns: Aggregate, Entity, Domain Event...)
 ```
 
-make(): factory method khỏi tạo instance. Gọi đến helper app() của Laravel
-Sử dụng:
-Khi sử dụng sẽ gọi đến make để làm việc
-Tại sao lại sử dụng trait mà ko đủ dụng abstract class:
-+ Giải quyết vấn đề đa kế thừa
-+ Tái sử dụng: sử dụng trait action có thể ở data hoặc bất kì đâu
+---
 
+### N-Layer Architecture
+→ [Chi tiết: layer.md](./layer.md)
+
+- Chia thành 4 tầng: Presentation → Application → Domain → Data Access
+- Tầng trên phụ thuộc tầng dưới
+- Dễ hiểu, phù hợp team mới, CRUD app
+- Nhược: dễ sinh "God Service", anemic domain model
+
+---
+
+### Hexagonal Architecture (Ports & Adapters)
+→ [Chi tiết: hexagonal.md](./hexagonal.md)
+
+- Core (domain + use case) ở giữa, mọi thứ bên ngoài kết nối qua **Port** (interface) và **Adapter** (implementation)
+- Inbound: REST, CLI, Queue → Core
+- Outbound: Core → DB, Email, External API
+- Thay đổi adapter (đổi DB, thêm gRPC) không ảnh hưởng core
+
+---
+
+### Onion Architecture
+→ [Chi tiết: onion.md](./onion.md)
+
+- Tương tự Hexagonal, nhấn mạnh Domain Model là lõi trung tâm
+- Từ trong ra: Domain Model → Domain Services / Interfaces → Application Services → External
+- Được coi là tiền thân của Clean Architecture
+
+---
+
+### Clean Architecture
+→ [Chi tiết: clean.md](./clean.md)
+
+- Đề xuất bởi Robert C. Martin (Uncle Bob)
+- 4 vòng: Entities → Use Cases → Interface Adapters → Frameworks & Drivers
+- Tách biệt rõ **Entity** (enterprise rules) và **Use Case** (application rules)
+- Mọi phụ thuộc hướng từ ngoài vào trong (Dependency Rule)
+
+---
+
+## Các kiến trúc và pattern bổ trợ
+
+### Event-Driven Architecture (EDA)
+→ [Chi tiết: event-driven-architecture.md](./event-driven-architecture.md)
+
+- Các service giao tiếp qua **event** thay vì gọi trực tiếp
+- Producer publish event → Message Broker (Kafka, RabbitMQ) → Consumer subscribe
+- Loose coupling, resilient, scalable
+- Hai pattern điều phối: **Choreography** (service tự biết) vs **Orchestration** (có orchestrator)
+
+---
+
+### Event Sourcing
+→ [Chi tiết: event-sourcing.md](./event-sourcing.md)
+
+- Lưu **chuỗi event** thay vì chỉ lưu state hiện tại
+- State = replay toàn bộ event từ đầu
+- Có đầy đủ audit trail, temporal query, dễ debug
+- Thường kết hợp với **CQRS**: Write side dùng Event Store, Read side dùng Projection
+
+---
+
+### Event Storming
+→ [Chi tiết: event_storming.md](./event_storming.md)
+
+- Workshop khám phá nghiệp vụ, không phải kiến trúc kỹ thuật
+- Dùng sticky notes để map Domain Event → Command → Actor → Aggregate → Policy
+- Output: xác định Bounded Context, Aggregate cho DDD
+
+---
+
+### DDD (Domain-Driven Design)
+→ [Chi tiết: ddd/README.md](./ddd/README.md)
+
+- Phương pháp thiết kế phần mềm xoay quanh **domain model**
+- Strategic: Bounded Context, Ubiquitous Language, Context Map
+- Tactical: Entity, Value Object, Aggregate, Domain Event, Repository, Factory, Domain Service
+
+---
+
+## Khi nào dùng gì?
+
+| Tình huống                                       | Kiến trúc phù hợp              |
+|--------------------------------------------------|-------------------------------|
+| CRUD app, team nhỏ, deadline gấp                 | N-Layer                       |
+| Logic vừa, cần test tốt, dễ thay DB/API          | Hexagonal                     |
+| Domain phức tạp, cần DDD                         | Clean + DDD                   |
+| Hệ thống phân tán, nhiều service                 | EDA + Microservices           |
+| Cần audit trail đầy đủ, temporal query           | Event Sourcing + CQRS         |
+| Team mới cần align về nghiệp vụ                  | Event Storming (workshop)     |
