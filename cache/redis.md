@@ -185,6 +185,24 @@ Failover là cơ chế tự động chuyển đổi sang hệ thống dự phòn
 - Có nhiều **master nodes**, mỗi master giữ một phần dữ liệu
 - Có thể **đọc/ghi phân tán**
 
+**Vấn đề của Sentinel:** vẫn chỉ có 1 master ghi → bottleneck khi write nhiều, scale được read nhưng không scale được write.
+
+Redis Cluster giải quyết bằng cách có nhiều master:
+```
+Master 1 ──── Slave 1    (quản lý slot 0 → 5460)
+Master 2 ──── Slave 2    (quản lý slot 5461 → 10922)
+Master 3 ──── Slave 3    (quản lý slot 10923 → 16383)
+```
+
+#### Hash Slot:
+- Redis Cluster chia dữ liệu thành **16,384 hash slots**
+- Khi `SET user:123`, Redis tính `CRC16("user:123") % 16384` → ra slot số bao nhiêu → biết ghi vào master nào
+- Mỗi master chỉ chịu trách nhiệm một phần slot → dữ liệu phân tán đều
+
+#### Failover tự động:
+- Mỗi master có slave riêng
+- Master chết → slave của nó tự lên làm master, không cần Sentinel
+
 #### Ưu điểm:
 - **Scale read & write**
 - **Failover tự động**
@@ -195,9 +213,14 @@ Failover là cơ chế tự động chuyển đổi sang hệ thống dự phòn
 - Cost cao hơn
 - Data inconsistency vẫn tồn tại
 
-#### Hash Slot:
-- Redis Cluster chia dữ liệu thành **16,384 hash slots**
-- Mỗi master quản lý một phần hash slot → dữ liệu được phân phối đều
+#### So sánh 3 kiến trúc:
+
+| | Master-Slave | Sentinel | Cluster |
+|---|---|---|---|
+| Scale write | Không | Không | Có |
+| Scale read | Có | Có | Có |
+| Tự động failover | Không | Có | Có |
+| Độ phức tạp | Thấp | Trung bình | Cao |
 
 ---
 
@@ -224,32 +247,81 @@ Failover là cơ chế tự động chuyển đổi sang hệ thống dự phòn
 
 Redis sẽ thực hiện theo `maxmemory-policy`
 
+**LRU (Least Recently Used):** xóa key lâu nhất chưa được truy cập
+```
+Key A truy cập lúc: 10:00
+Key B truy cập lúc: 10:05
+Key C truy cập lúc: 10:10
+=> RAM đầy => xóa Key A (lâu nhất chưa dùng)
+```
+
+**LFU (Least Frequently Used):** xóa key có tần suất truy cập thấp nhất
+```
+Key A được truy cập: 100 lần
+Key B được truy cập: 3 lần
+Key C được truy cập: 50 lần
+=> RAM đầy => xóa Key B (ít được dùng nhất)
+```
+
+| | LRU | LFU |
+|---|---|---|
+| Dựa vào | Thời điểm dùng gần nhất | Số lần truy cập |
+| Key lâu không dùng | Bị xóa | Giữ nếu dùng nhiều lần trước đó |
+| Phù hợp | Cache ngắn hạn, web session | Hot key, dữ liệu phổ biến lâu dài |
+
 ### Các chế độ:
 - `noeviction`: không xóa, trả lỗi
 - `allkeys-random`: xóa key ngẫu nhiên
-- `volatile-ttl`: xóa key có TTL sắp hết hạn
-- `allkeys-lru`: xóa key ít được dùng gần đây nhất
-- `allkeys-lfu`: xóa key ít được truy cập nhất
+- `volatile-ttl`: xóa key có TTL sắp hết hạn nhất
+- `allkeys-lru`: xóa key ít được dùng gần đây nhất (LRU)
+- `allkeys-lfu`: xóa key ít được truy cập nhất (LFU)
 
 ---
 
 ## 9. Persistence (Sao lưu dữ liệu)
 
+Redis lưu dữ liệu trên RAM → khi server crash hoặc restart, dữ liệu mất hết.
+Persistence giúp Redis lưu dữ liệu xuống disk để có thể phục hồi lại sau khi restart.
+
 ### 9.1 AOF (Append Only File)
-- Ghi **mọi lệnh write** xuống file `.aof`
-- Có thể phục hồi bằng cách thực hiện lại lệnh
-- **Ưu điểm**: Ít mất dữ liệu
-- **Nhược điểm**: File lớn, khôi phục lâu
+Ghi lại **từng lệnh write** vào file `.aof` theo thứ tự thời gian, giống như transaction log.
+
+```
+SET user:1 "Alice"   ← ghi vào .aof
+SET user:2 "Bob"     ← ghi vào .aof
+DEL user:1           ← ghi vào .aof
+...
+```
+
+Khi khôi phục: Redis đọc file `.aof` và **thực thi lại từng lệnh** từ đầu đến cuối.
+
+Ưu điểm: ít mất dữ liệu nhất (có thể cấu hình ghi mỗi lệnh, mỗi giây, hoặc để OS tự quyết)
+Nhược điểm: file ngày càng lớn, khôi phục lâu vì phải replay toàn bộ lịch sử lệnh
 
 ### 9.2 RDB (Redis Database Backup - Snapshot)
-- Redis định kỳ chụp nhanh (snapshot) toàn bộ dữ liệu và lưu vào file .rdb
-- Snapshot dữ liệu theo chu kỳ
-- Lưu trữ dạng binary `.rdb`
+Redis định kỳ **chụp toàn bộ dữ liệu** tại một thời điểm và lưu vào file `.rdb` dạng binary.
 
-| Ưu điểm          | Nhược điểm                         |
-|------------------|-------------------------------------|
-| Tốc độ khôi phục nhanh | Không real-time, có thể mất dữ liệu |
-| File nhỏ hơn AOF       | Snapshot lớn → hiệu suất giảm        |
+```
+10:00 → snapshot → lưu file rdb
+10:05 → snapshot → lưu file rdb (ghi đè)
+10:10 → Redis crash
+=> Khôi phục từ snapshot 10:05, mất dữ liệu 5 phút
+```
+
+Ưu điểm: file nhỏ gọn, khôi phục nhanh (load binary trực tiếp vào RAM)
+Nhược điểm: mất dữ liệu trong khoảng thời gian giữa 2 snapshot
+
+### So sánh AOF vs RDB
+
+| | AOF | RDB |
+|---|---|---|
+| Cơ chế | Ghi từng lệnh | Snapshot định kỳ |
+| Mất dữ liệu tối đa | Rất ít (vài giây) | Nhiều hơn (vài phút) |
+| Tốc độ khôi phục | Chậm (replay lệnh) | Nhanh (load binary) |
+| Kích thước file | Lớn | Nhỏ |
+| Dùng khi | Cần an toàn dữ liệu | Cần khôi phục nhanh |
+
+Thực tế thường **kết hợp cả hai**: AOF để đảm bảo ít mất dữ liệu, RDB để khôi phục nhanh khi cần.
 
 ---
 
@@ -296,37 +368,89 @@ Tổng quan cơ chế xoá dữ liệu hết hạn
 
 
 ### 11. Cơ chế sao lưu dữ liệu từ Master sang Slave
-Quá trình sao lưu dữ liệu từ Master sang Slave trong Redis bao gồm hai giai đoạn chính: 
-- Đồng bộ hóa toàn bộ (Full Synchronization) 
-- Sao chép lệnh (Command Propagation).
 
-Tóm tắt cơ chế sao lưu dữ liệu từ Master sang Slave trong Redis
-- Master-Slave Replication trong Redis sao chép dữ liệu từ 
-- Master (xử lý ghi/đọc) sang Slave (chỉ đọc) để cân bằng tải, đảm bảo sẵn sàng cao và dự phòng dữ liệu. Cơ chế gồm:
+Mục tiêu: giữ cho Slave luôn có dữ liệu giống Master để phục vụ read và sẵn sàng thay thế Master khi cần.
 
-#### 11.1 Đồng bộ hóa toàn bộ (Full Synchronization):
-Khi một Slave kết nối lần đầu với Master hoặc khi kết nối bị gián đoạn quá lâu, quá trình đồng bộ hóa toàn bộ được thực hiện:
-- Slave gửi `PSYNC/SYNC` đến Master.
-- Master tạo và gửi snapshot RDB, Slave tải và áp dụng.
-- Master gửi các lệnh ghi tích lũy trong quá trình truyền.
+Có 2 giai đoạn chính:
 
-#### 11.2 Sao chép lệnh (Command Propagation):
-Sau khi hoàn tất đồng bộ hóa toàn bộ, Redis chuyển sang giai đoạn sao chép lệnh để giữ cho Slave luôn đồng bộ với Master:
-- Khi client gửi một lệnh ghi đến Master (ví dụ: SET key value, DEL key, LPUSH list value), Master ghi log các lệnh này vào Replication buffer.
-- Các lệnh này được gửi theo thời gian thực (qua TCP stream) từ Master tới tất cả các Slave đang kết nối.
-- Slave không tự thực hiện ghi từ client mà chỉ nhận lệnh từ Master và thực thi lại.
-- Mỗi Slave nhận và thực thi từng lệnh Redis y như Master.
-- Điều này đảm bảo Slave có trạng thái dữ liệu giống hệt Master, nhưng chỉ ở chế độ đọc (read-only).
+#### 11.1 Full Synchronization - Đồng bộ toàn bộ
+Xảy ra khi Slave kết nối lần đầu hoặc mất kết nối quá lâu.
 
-#### Hỗ trợ đồng bộ một phần – Partial Resynchronization (PSYNC)
-- Khi Slave mất kết nối với Master (ví dụ mạng chập chờn):
-- Nếu kết nối khôi phục sớm và Master vẫn giữ replication buffer chưa bị ghi đè, thì Slave có thể yêu cầu đồng bộ một phần:
-  - Gửi PSYNC replication_id offset đến Master.
-  - Master chỉ gửi phần lệnh mới phát sinh từ offset đó.
-  - Không cần đồng bộ lại toàn bộ dữ liệu.
-- Nếu buffer bị ghi đè hoặc Master khởi động lại → fallback về full resync (bắt đầu từ đầu).
+**Bước 1:** Slave gửi `PSYNC/SYNC` lên Master để yêu cầu đồng bộ.
+
+**Bước 2:** Master tạo snapshot RDB — chụp toàn bộ dữ liệu hiện tại xuống file `.rdb`.
+Trong lúc đang tạo RDB, client vẫn gửi lệnh write đến Master bình thường.
+Các lệnh write này được Master tạm ghi vào **Replication Buffer** để không bị mất.
+
+**Bước 3:** Master gửi file RDB sang Slave. Slave xóa dữ liệu cũ và load toàn bộ RDB vào RAM.
+
+**Bước 4:** Master gửi tiếp các lệnh trong Replication Buffer sang Slave.
+Slave thực thi lại từng lệnh → bắt kịp những thay đổi xảy ra trong lúc đang truyền RDB.
+
+```
+Client                Master                  Slave
+  |                     |                       |
+  |                     |   <-- PSYNC/SYNC ---  |   Bước 1: Slave yêu cầu đồng bộ
+  |                     |                       |
+  |                     |  (tạo snapshot RDB)   |   Bước 2: Master chụp toàn bộ data
+  |                     |                       |
+  |  SET key value -->  |                       |
+  |                     |  (ghi vào repl buf)   |   Bước 2: lệnh write tạm lưu vào buffer
+  |                     |                       |
+  |                     |  --- RDB file -----> |   Bước 3: Slave load toàn bộ data
+  |                     |                       |
+  |                     |  --- buffer cmds --> |   Bước 4: Slave áp dụng lệnh tích lũy
+  |                     |                       |
+  |                     |     [đồng bộ xong]    |
+```
+
+Sau bước 4, Slave đã có dữ liệu giống hệt Master → chuyển sang Command Propagation.
+
+#### 11.2 Command Propagation - Sao chép lệnh
+Sau khi Full Sync xong, Slave không cần sync lại từ đầu nữa. Thay vào đó mỗi lệnh write
+từ client gửi lên Master sẽ được Master **forward ngay lập tức** xuống tất cả Slave qua TCP stream.
+
+Slave nhận lệnh và thực thi lại y hệt Master → dữ liệu luôn được cập nhật theo thời gian thực.
+Slave **không nhận write trực tiếp từ client**, chỉ nhận từ Master.
+
+```
+Client                Master                  Slave 1       Slave 2
+  |                     |                       |               |
+  |  SET user "Alice" ->|                       |               |
+  |                     |--- SET user "Alice" ->|               |
+  |                     |--- SET user "Alice" --------------- ->|
+  |                     |                       |               |
+  |  DEL user:2 ------->|                       |               |
+  |                     |--- DEL user:2 ------->|               |
+  |                     |--- DEL user:2 --------------------- ->|
+```
+
+Vì là **async** nên Slave có thể trễ hơn Master vài ms (replication lag) → đọc từ Slave
+có thể nhận dữ liệu cũ hơn Master một chút.
+
+#### 11.3 Partial Resynchronization (PSYNC) - Đồng bộ một phần
+Khi Slave mất kết nối tạm thời (mạng chập chờn) rồi kết nối lại, nếu làm Full Sync lại
+thì rất tốn tài nguyên. PSYNC giải quyết bằng cách chỉ sync phần còn thiếu.
+
+Master luôn giữ một **Replication Buffer** (vòng tròn, có giới hạn kích thước) chứa các
+lệnh write gần đây. Mỗi Slave theo dõi **offset** — vị trí lệnh cuối cùng nó đã nhận.
+
+Khi Slave kết nối lại, gửi `PSYNC <replication_id> <offset>`:
+- Master kiểm tra offset đó còn trong buffer không
+- Còn → chỉ gửi phần lệnh từ offset đó đến hiện tại, không cần full sync
+- Mất (buffer bị ghi đè) → fallback về Full Synchronization
+
+```
+Replication Buffer của Master (giới hạn kích thước):
+[cmd1][cmd2][cmd3][cmd4][cmd5]
+                  ^
+            offset Slave đang ở (đã nhận đến cmd3)
+
+Slave kết nối lại: PSYNC <id> <offset=cmd3>
+=> Master chỉ gửi [cmd4][cmd5]
+```
 
 #### Đặc điểm:
-- Không đồng bộ (asynchronous), có thể gây độ trễ nhỏ.
-- Slave chỉ đọc, hỗ trợ cân bằng tải và sao lưu.
-- Tốn tài nguyên khi đồng bộ hóa toàn bộ.
+- **Async**: Slave có thể trễ so với Master → data inconsistency tạm thời
+- **Slave read-only**: không nhận write từ client
+- Full sync tốn tài nguyên → hạn chế số lần Slave reconnect

@@ -58,7 +58,7 @@ Từ ngoài vào trong:
 | ------------------ | ------------------ | --------------------------- |
 | Cấu trúc hình      | Vòng tròn đồng tâm | Vòng tròn đồng tâm          |
 | Tách UseCase riêng | Ít rõ ràng         | Rõ ràng riêng UseCase       |
-| Lãi cố Entities    | Entity trong core  | Entity + UseCase trong core |
+| Lõi Entities       | Entity trong core  | Entity + UseCase trong core |
 | Phổ biến           | Trung bình         | Cao (chuẩn DDD)             |
 
 ---

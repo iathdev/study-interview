@@ -47,12 +47,18 @@ Tên gọi "lục giác" chỉ là biểu tượng hình học, nhưng ý tưở
 
 ---
 
-## 4. Lợi ích của Hexagonal Architecture
+## 4. Lợi ích và nhược điểm
 
+### Lợi ích
 - **Tách biệt rõ ràng** giữa logic nghiệp vụ và hạ tầng
 - **Dễ test** core mà không cần phụ thuộc công nghệ
 - **Thay đổi adapter không ảnh hưởng domain**
 - **Dễ mở rộng**: thêm REST, gRPC, CLI mà không thay đổi core
+
+### Nhược điểm
+- **Nhiều interface/abstraction**: mỗi interaction cần Port + Adapter → boilerplate nhiều
+- **Over-engineering** với CRUD app hoặc dự án nhỏ
+- **Khó setup ban đầu**: cần thiết kế Port rõ ràng trước khi code
 
 ---
 
@@ -104,7 +110,89 @@ Tên gọi "lục giác" chỉ là biểu tượng hình học, nhưng ý tưở
 
 ---
 
-## 8. Các công nghệ phù hợp
+## 8. Ví dụ code
+
+```java
+// === INBOUND PORT (interface) ===
+public interface OrderInputPort {
+    OrderId placeOrder(PlaceOrderCommand command);
+}
+
+// === CORE (Use Case — implement inbound port) ===
+public class PlaceOrderUseCase implements OrderInputPort {
+    private final InventoryPort inventory;   // outbound port
+    private final OrderRepository orderRepo; // outbound port
+
+    @Override
+    public OrderId placeOrder(PlaceOrderCommand command) {
+        inventory.reserve(command.getItems()); // gọi qua outbound port
+        Order order = Order.create(command);
+        orderRepo.save(order);
+        return order.getId();
+    }
+}
+
+// === OUTBOUND PORT (interface) ===
+public interface InventoryPort {
+    void reserve(List<OrderItem> items);
+}
+
+// === OUTPUT ADAPTER (implementation của outbound port) ===
+public class InventoryHttpAdapter implements InventoryPort {
+    @Override
+    public void reserve(List<OrderItem> items) {
+        // gọi HTTP đến Inventory Service
+    }
+}
+
+// === INPUT ADAPTER (REST controller gọi vào inbound port) ===
+@RestController
+public class OrderController {
+    private final OrderInputPort orderInputPort;
+
+    @PostMapping("/orders")
+    public ResponseEntity<OrderId> placeOrder(@RequestBody PlaceOrderRequest req) {
+        return ResponseEntity.ok(orderInputPort.placeOrder(req.toCommand()));
+    }
+}
+```
+
+> **Key insight**: Core (`PlaceOrderUseCase`) không import bất kỳ framework nào. Test chỉ cần mock `InventoryPort` và `OrderRepository` — không cần HTTP, không cần DB.
+
+---
+
+## 9. Tổ chức folder
+
+```
+src/
+├── core/                        ← không phụ thuộc gì
+│   ├── domain/                  ← Entity, Value Object
+│   │   └── Order.java
+│   ├── ports/
+│   │   ├── inbound/             ← Input Port (interface)
+│   │   │   └── OrderInputPort.java
+│   │   └── outbound/            ← Output Port (interface)
+│   │       ├── InventoryPort.java
+│   │       └── OrderRepository.java
+│   └── usecases/                ← implement inbound port
+│       └── PlaceOrderUseCase.java
+│
+└── adapters/                    ← phụ thuộc vào core (1 chiều)
+    ├── inbound/
+    │   ├── rest/                ← REST controller
+    │   │   └── OrderController.java
+    │   └── messaging/           ← Kafka consumer
+    │       └── OrderEventConsumer.java
+    └── outbound/
+        ├── persistence/         ← JPA Repository
+        │   └── OrderJpaAdapter.java
+        └── http/                ← gọi HTTP đến service khác
+            └── InventoryHttpAdapter.java
+```
+
+---
+
+## 10. Các công nghệ phù hợp
 
 - Java/Spring Boot (với interface, annotation @Component dễ define adapter)
 - Node.js (với dependency injection bằng module)
@@ -113,7 +201,7 @@ Tên gọi "lục giác" chỉ là biểu tượng hình học, nhưng ý tưở
 
 ---
 
-## 9. Kết luận
+## 11. Kết luận
 
 Hexagonal Architecture giúp xây dựng hệ thống:
 - Dễ kiểm thử (testable)
